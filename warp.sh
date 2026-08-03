@@ -397,7 +397,7 @@ cmd_status() {
     echo "    IPv6    : ${v6:-? (tunnel idle)}"
 
     info="$(curl -s -m 8 -x http://127.0.0.1:$PORT https://ip.pkgforge.dev/json 2>/dev/null)"
-    if echo "$info" | python3 -c 'import json,sys; d=json.load(sys.stdin); city=d.get("city","N/A"); country=d.get("country","N/A"); flag=d.get("flag",""); org=d.get("org","Cloudflare"); print(f"    Lokasi  : {city}, {country} {flag} ({org})")' 2>/dev/null; then
+    if echo "$info" | python3 -c 'import json,sys; d=json.load(sys.stdin); city=d.get("city","N/A"); country=d.get("country","N/A"); org=d.get("org","Cloudflare"); print(f"    Lokasi  : {city}, {country} ({org})")' 2>/dev/null; then
         :
     else
         echo "    Lokasi  : ? (tidak terhubung)"
