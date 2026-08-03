@@ -42,7 +42,7 @@ Pilih menu [0-10]:
 
 ## Instalasi
 
-Cukup jalankan 1 baris perintah berikut di Termux (tanpa perlu `git clone`):
+Cukup jalankan 1 baris perintah berikut di Termux:
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/raja-plenger/warp-proxy-termux/main/warp.sh | bash
