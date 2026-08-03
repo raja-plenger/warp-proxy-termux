@@ -405,15 +405,31 @@ cmd_status() {
 }
 
 cmd_logs() {
+    local log_file=""
     if [ -f "$PREFIX/var/log/sv/$SVC/current" ]; then
-        echo "[*] Menampilkan log runit ($PREFIX/var/log/sv/$SVC/current)..."
-        tail -f "$PREFIX/var/log/sv/$SVC/current"
+        log_file="$PREFIX/var/log/sv/$SVC/current"
     elif [ -f "$LOG" ]; then
-        echo "[*] Menampilkan log manual ($LOG)..."
-        tail -f "$LOG"
-    else
-        echo "[!] Log tidak ditemukan"
+        log_file="$LOG"
     fi
+
+    if [ -z "$log_file" ] || [ ! -f "$log_file" ]; then
+        echo "[!] Log belum tersedia. Uji koneksi/jalankan proxy terlebih dahulu."
+        return 1
+    fi
+
+    echo "===================================================="
+    echo "         Log Service Realtime (wireproxy)"
+    echo "===================================================="
+    echo "[*] Menampilkan 30 baris log terbaru ($log_file)..."
+    echo "📌 Tekan Ctrl+C untuk kembali ke menu utama."
+    echo "----------------------------------------------------"
+    echo ""
+
+    trap ':' INT
+    tail -n 30 -f "$log_file" 2>/dev/null || true
+    trap - INT
+    echo ""
+    echo "[✓] Kembali ke menu utama..."
 }
 
 cmd_watch() {
