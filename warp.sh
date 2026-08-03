@@ -200,6 +200,7 @@ cmd_install() {
         fi
 
         echo "=== [2/5] Menyiapkan DNS & CA certificates ==="
+        mkdir -p "$CONFIG_DIR"
         printf "nameserver 1.1.1.1\nnameserver 8.8.8.8\n" > "$RESOLV"
         if [ ! -f "$CONFIG_DIR/ca-bundle.crt" ]; then
             cat /system/etc/security/cacerts/* > "$CONFIG_DIR/ca-bundle.crt" 2>/dev/null || true
@@ -305,6 +306,7 @@ cmd_start() {
         echo "[!] wgcf-profile.conf tidak ada. Jalankan ./warp.sh install dulu."
         return 1
     fi
+    mkdir -p "$CONFIG_DIR"
     if [ ! -f "$RESOLV" ]; then
         printf "nameserver 1.1.1.1\nnameserver 8.8.8.8\n" > "$RESOLV"
     fi
