@@ -594,9 +594,10 @@ cmd_menu() {
 
 cmd_help() {
     cat <<EOF
-Cloudflare WARP Proxy CLI untuk Termux
---------------------------------------
-Usage: $(basename "$0") <command> [args]
+====================================================
+         Cloudflare WARP Proxy Termux
+====================================================
+Usage: warp.sh <command> [args]
 
 Subcommands:
   menu                   Jalankan menu interaktif CLI (default)
@@ -611,6 +612,17 @@ Subcommands:
   watch [interval]       Jalankan watchdog auto-restart (fallback jika tanpa runit)
   help | -h | --help     Tampilkan pesan bantuan ini
 
+Cara Penggunaan & Eksplorasi:
+  1. Unduh script ke Termux:
+     curl -fsSL -O https://raw.githubusercontent.com/raja-plenger/warp-proxy-termux/main/warp.sh
+     chmod +x warp.sh
+
+  2. Jalankan Menu Interaktif CLI:
+     ./warp.sh
+
+  3. Atau jalankan Instalasi Langsung (1-Baris):
+     curl -fsSL https://raw.githubusercontent.com/raja-plenger/warp-proxy-termux/main/warp.sh | bash -s install
+
 Penggunaan dengan OpenCode (1 Baris Copy-Paste):
   export HTTPS_PROXY=http://127.0.0.1:$PORT HTTP_PROXY=http://127.0.0.1:$PORT NO_PROXY=localhost,127.0.0.1 https_proxy=http://127.0.0.1:$PORT http_proxy=http://127.0.0.1:$PORT no_proxy=localhost,127.0.0.1
   opencode
@@ -622,7 +634,7 @@ case "$1" in
         if [ -t 0 ]; then
             cmd_menu
         else
-            cmd_install
+            cmd_help
         fi
         ;;
     menu)                cmd_menu ;;

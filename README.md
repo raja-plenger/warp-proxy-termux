@@ -40,12 +40,22 @@ Pilih menu [0-10]:
 
 ---
 
-## Instalasi
+## Unduh & Eksplorasi (Menu Interaktif)
 
-Cukup jalankan 1 baris perintah berikut di Termux:
+Jalankan perintah berikut untuk mengunduh script dan membuka menu interaktif CLI:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/raja-plenger/warp-proxy-termux/main/warp.sh | bash
+curl -fsSL -O https://raw.githubusercontent.com/raja-plenger/warp-proxy-termux/main/warp.sh && chmod +x warp.sh && ./warp.sh
+```
+
+---
+
+## Instalasi Langsung (1-Baris)
+
+Jika ingin langsung menjalankan instalasi tanpa membuka menu interaktif:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/raja-plenger/warp-proxy-termux/main/warp.sh | bash -s install
 ```
 
 Menangani: prasyarat, wireproxy (TUR), registrasi akun WARP, konfigurasi, dan setup runit (auto-restart + auto-start boot). Idempotent — jalankan ulang kapan saja.
@@ -156,7 +166,7 @@ Komponen: **wireproxy** (klien WireGuard user-mode jadi HTTP proxy) + **python (
 | Masalah | Solusi |
 |---|---|
 | Registrasi 403 | Tunggu beberapa menit (rate-limit WARP per IP), jalankan `./warp.sh register` atau `./warp.sh install` |
-| Proxy tidak merespons | `./warp.sh restart` atau cek log dengan `./warp.sh logs` |
+| Proxy tidak merespons | `./warp.sh restart` atau cek log megenai `./warp.sh logs` |
 | Port 9060 dipakai | Hentikan dengan `./warp.sh stop` / ubah port di `~/.config/warp-proxy/wireproxy.conf` |
 | OpenCode error proxy | Pastikan `NO_PROXY=localhost,127.0.0.1` diset |
 | Ganti lokasi egress? | **Tidak bisa dipilih** — WARP mengikuti PoP terdekat; untuk region tertentu pakai VPS/proxy di negara target |
