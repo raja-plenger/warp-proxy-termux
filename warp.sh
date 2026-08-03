@@ -149,6 +149,7 @@ profile_path = os.path.join(config_dir, "wgcf-profile.conf")
 account_path = os.path.join(config_dir, "warp-account.json")
 
 os.umask(0o077)
+os.makedirs(config_dir, exist_ok=True)
 with open(profile_path, "w") as f:
     f.write(profile)
 
@@ -378,7 +379,7 @@ cmd_restart() {
 }
 
 cmd_status() {
-    local v4 v6
+    local v4 v6 info
     if [ -S "$SVC_DIR/supervise/ok" ] && sv status "$SVC" 2>/dev/null | grep -q "^run:"; then
         echo "[✓] Wireproxy berjalan (via runit $SVC)"
     elif [ -f "$PIDFILE" ] && kill -0 "$(cat "$PIDFILE")" 2>/dev/null; then
@@ -390,10 +391,17 @@ cmd_status() {
         return 1
     fi
 
-    v4="$(curl -4 -s -m 8 -x http://127.0.0.1:$PORT https://api.ipify.org 2>/dev/null)"
-    v6="$(curl -6 -s -m 8 -x http://127.0.0.1:$PORT http://ipv6.icanhazip.com 2>/dev/null)"
-    echo "    IPv4: ${v4:-? (tunnel idle)}"
-    echo "    IPv6: ${v6:-? (tunnel idle)}"
+    v4="$(curl -4 -s -m 6 -x http://127.0.0.1:$PORT https://api.ipify.org 2>/dev/null)"
+    v6="$(curl -6 -s -m 6 -x http://127.0.0.1:$PORT http://ipv6.icanhazip.com 2>/dev/null)"
+    echo "    IPv4    : ${v4:-? (tunnel idle)}"
+    echo "    IPv6    : ${v6:-? (tunnel idle)}"
+
+    info="$(curl -s -m 8 -x http://127.0.0.1:$PORT https://ip.pkgforge.dev/json 2>/dev/null)"
+    if echo "$info" | python3 -c 'import json,sys; d=json.load(sys.stdin); city=d.get("city","N/A"); country=d.get("country","N/A"); flag=d.get("flag",""); org=d.get("org","Cloudflare"); print(f"    Lokasi  : {city}, {country} {flag} ({org})")' 2>/dev/null; then
+        :
+    else
+        echo "    Lokasi  : ? (tidak terhubung)"
+    fi
 }
 
 cmd_logs() {
@@ -409,6 +417,7 @@ cmd_logs() {
 }
 
 cmd_watch() {
+    mkdir -p "$CONFIG_DIR"
     if [ -f "$WATCHDOG_PIDFILE" ] && kill -0 "$(cat "$WATCHDOG_PIDFILE")" 2>/dev/null; then
         echo "[✓] Watchdog sudah berjalan (PID: $(cat "$WATCHDOG_PIDFILE"))"
         return 0
@@ -431,6 +440,7 @@ cmd_watch() {
 }
 
 cmd_loop() {
+    mkdir -p "$CONFIG_DIR"
     echo "$$" > "$WATCHDOG_PIDFILE"
     local interval="${1:-60}"
     if ! is_running; then
