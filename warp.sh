@@ -16,8 +16,9 @@ LOG="$CONFIG_DIR/warp.log"
 PIDFILE="$CONFIG_DIR/warp.pid"
 WATCHDOG_PIDFILE="$CONFIG_DIR/warp-watchdog.pid"
 SVC="wireproxy"
-SVC_DIR="$PREFIX/var/service/$SVC"
-LOGDIR="${LOGDIR:-$PREFIX/var/log}"
+export SVDIR="${SVDIR:-$PREFIX/var/service}"
+SVC_DIR="$SVDIR/$SVC"
+export LOGDIR="${LOGDIR:-$PREFIX/var/log}"
 
 migrate_old_configs() {
     for file in wgcf-profile.conf warp-account.json wireproxy.conf resolv.conf ca-bundle.crt warp.log warp.pid warp-watchdog.pid; do
