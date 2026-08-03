@@ -498,55 +498,59 @@ cmd_menu() {
         echo -e " ${RED}[10]${NC} Uninstall WARP Proxy"
         echo -e " ${YELLOW}[0]${NC} Keluar"
         echo ""
-        read -r -p "Pilih menu [0-10]: " choice
+        if ! read -r -p "Pilih menu [0-10]: " choice; then
+            echo ""
+            echo "[!] Terminal non-interaktif terdeteksi (EOF). Keluar."
+            exit 0
+        fi
         case "$choice" in
             1)
                 echo ""
                 cmd_status
                 echo ""
-                read -r -p "Tekan Enter untuk kembali ke menu..."
+                read -r -p "Tekan Enter untuk kembali ke menu..." || break
                 ;;
             2)
                 echo ""
                 cmd_restart
                 echo ""
-                read -r -p "Tekan Enter untuk kembali ke menu..."
+                read -r -p "Tekan Enter untuk kembali ke menu..." || break
                 ;;
             3)
                 echo ""
                 cmd_start
                 echo ""
-                read -r -p "Tekan Enter untuk kembali ke menu..."
+                read -r -p "Tekan Enter untuk kembali ke menu..." || break
                 ;;
             4)
                 echo ""
                 cmd_stop
                 echo ""
-                read -r -p "Tekan Enter untuk kembali ke menu..."
+                read -r -p "Tekan Enter untuk kembali ke menu..." || break
                 ;;
             5)
                 echo ""
                 cmd_install
                 echo ""
-                read -r -p "Tekan Enter untuk kembali ke menu..."
+                read -r -p "Tekan Enter untuk kembali ke menu..." || break
                 ;;
             6)
                 echo ""
                 cmd_register
                 echo ""
-                read -r -p "Tekan Enter untuk kembali ke menu..."
+                read -r -p "Tekan Enter untuk kembali ke menu..." || break
                 ;;
             7)
                 echo ""
                 cmd_logs
                 echo ""
-                read -r -p "Tekan Enter untuk kembali ke menu..."
+                read -r -p "Tekan Enter untuk kembali ke menu..." || break
                 ;;
             8)
                 echo ""
                 cmd_watch 60
                 echo ""
-                read -r -p "Tekan Enter untuk kembali ke menu..."
+                read -r -p "Tekan Enter untuk kembali ke menu..." || break
                 ;;
             9)
                 echo ""
@@ -563,13 +567,13 @@ cmd_menu() {
                 echo -e "${YELLOW}📌 Matikan / Lepas Proxy (Unset):${NC}"
                 echo "unset HTTPS_PROXY HTTP_PROXY NO_PROXY https_proxy http_proxy no_proxy"
                 echo ""
-                read -r -p "Tekan Enter untuk kembali ke menu..."
+                read -r -p "Tekan Enter untuk kembali ke menu..." || break
                 ;;
             10)
                 echo ""
                 cmd_uninstall
                 echo ""
-                read -r -p "Tekan Enter untuk kembali ke menu..."
+                read -r -p "Tekan Enter untuk kembali ke menu..." || break
                 ;;
             0)
                 echo "Keluar."
@@ -609,7 +613,14 @@ EOF
 }
 
 case "$1" in
-    ""|menu)             cmd_menu ;;
+    "")
+        if [ -t 0 ]; then
+            cmd_menu
+        else
+            cmd_install
+        fi
+        ;;
+    menu)                cmd_menu ;;
     install|setup)       cmd_install ;;
     uninstall)           cmd_uninstall "$2" ;;
     register)            cmd_register ;;
