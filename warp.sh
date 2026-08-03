@@ -413,7 +413,7 @@ cmd_logs() {
     fi
 
     if [ -z "$log_file" ] || [ ! -f "$log_file" ]; then
-        echo "[!] Log belum tersedia. Uji koneksi/jalankan proxy terlebih dahulu."
+        echo "[!] Log belum tersedia."
         return 1
     fi
 
@@ -471,6 +471,249 @@ cmd_loop() {
     done
 }
 
+cmd_check_opencode() {
+    local CYAN='\033[1;36m'
+    local GREEN='\033[1;32m'
+    local RED='\033[1;31m'
+    local YELLOW='\033[1;33m'
+    local NC='\033[0m'
+    local pass=0 fail=0
+    local need="http://127.0.0.1:$PORT"
+
+    echo "===================================================="
+    echo "      Cek Koneksi OpenCode vs WARP Proxy"
+    echo "===================================================="
+
+    if is_running; then
+        echo -e "[✓] Proxy WARP: ${GREEN}berjalan${NC} (port $PORT)"
+        pass=$((pass+1))
+    else
+        echo -e "[✗] Proxy WARP: ${RED}tidak berjalan${NC}"
+        fail=$((fail+1))
+    fi
+
+    local ip
+    ip="$(curl -s -m 8 -x "http://127.0.0.1:$PORT" https://ip.pkgforge.dev/json 2>/dev/null)"
+    if echo "$ip" | python3 -c 'import json,sys; json.load(sys.stdin)' >/dev/null 2>&1; then
+        local pub_ip
+        pub_ip="$(echo "$ip" | python3 -c 'import json,sys; print(json.load(sys.stdin).get("ip","?"))')"
+        echo -e "[✓] Proxy responsif (IP egress: ${GREEN}${pub_ip}${NC})"
+        pass=$((pass+1))
+    else
+        echo -e "[✗] Proxy tidak merespons curl via 127.0.0.1:$PORT"
+        fail=$((fail+1))
+    fi
+
+    local vars_ok=1
+    for var in HTTPS_PROXY HTTP_PROXY https_proxy http_proxy; do
+        local val
+        val="$(eval echo \"\${$var:-}\")"
+        if [ -n "$val" ]; then
+            echo -e "[✓] $var=$val"
+        else
+            echo -e "[✗] ${RED}$var tidak diset${NC} (butuh: $need)"
+            vars_ok=0
+        fi
+    done
+    if [ $vars_ok -eq 1 ]; then pass=$((pass+1)); else fail=$((fail+1)); fi
+
+    if [[ "$NO_PROXY" == *localhost* && "$NO_PROXY" == *127.0.0.1* ]]; then
+        echo -e "[✓] NO_PROXY mengandung localhost,127.0.0.1 (cegah routing loop TUI)"
+        pass=$((pass+1))
+    else
+        echo -e "[✗] NO_PROXY salah: '${NO_PROXY:-kosong}' (butuh: localhost,127.0.0.1)"
+        fail=$((fail+1))
+    fi
+
+    if pgrep -f "opencode" >/dev/null 2>&1; then
+        echo "[✓] Proses opencode sedang berjalan"
+        pass=$((pass+1))
+    else
+        echo -e "[!] opencode tidak sedang berjalan — mulai dengan 'opencode' untuk test penuh"
+    fi
+
+    local oclog="$HOME/.local/share/opencode/log/opencode.log"
+    if [ -f "$oclog" ]; then
+        local last
+        last="$(grep 'message=stream' "$oclog" 2>/dev/null | tail -1 | grep -o 'timestamp=[^ ]*' | cut -d= -f2)"
+        if [ -n "$last" ]; then
+            echo -e "[i] Aktivitas LLM opencode terakhir di log: ${YELLOW}$last${NC}"
+        fi
+    fi
+
+    if command -v strace >/dev/null 2>&1 && command -v opencode >/dev/null 2>&1 && command -v timeout >/dev/null 2>&1; then
+        echo ""
+        echo -e "${YELLOW}[*] Test langsung: lacak koneksi opencode ke 127.0.0.1:$PORT via strace (beberapa detik)...${NC}"
+        local tmpdir attempt
+        tmpdir="$(mktemp -d)"
+        for attempt in 1 2 3; do
+            timeout 40 strace -f -e trace=connect -o "$tmpdir/trace.txt" opencode run "hanya ketik: ok" >/dev/null 2>&1 || true
+            if grep -q "sin_port=htons($PORT)" "$tmpdir/trace.txt" 2>/dev/null; then
+                break
+            fi
+            rm -f "$tmpdir/trace.txt"
+        done
+        if grep -q "sin_port=htons($PORT)" "$tmpdir/trace.txt" 2>/dev/null; then
+            echo -e "[✓] TERBUKTI: opencode terkoneksi ke proxy 127.0.0.1:$PORT saat request LLM"
+            pass=$((pass+1))
+        else
+            echo -e "[✗] Tidak ada koneksi ke 127.0.0.1:$PORT — opencode sepertinya tidak memakai proxy"
+            fail=$((fail+1))
+        fi
+        rm -rf "$tmpdir"
+    else
+        echo "[i] strace/opencode tidak tersedia — test langsung dilewati"
+    fi
+
+    echo "----------------------------------------------------"
+    echo "Hasil: $pass benar, $fail bermasalah"
+    if [ $fail -eq 0 ]; then
+        echo -e "${GREEN}[✓] OpenCode siap memakai proxy WARP${NC}"
+    else
+        echo -e "${RED}[✗] Ada masalah — periksa bagian yang ditandai [✗]${NC}"
+    fi
+    echo "===================================================="
+}
+
+cmd_export_opencode() {
+    local mode="${1:-}"
+    local CYAN='\033[1;36m'
+    local GREEN='\033[1;32m'
+    local RED='\033[1;31m'
+    local YELLOW='\033[1;33m'
+    local BOLD='\033[1m'
+    local NC='\033[0m'
+    local bashrc="$HOME/.bashrc"
+    local marker_begin="# >>> warp-proxy (opencode) >>>"
+    local marker_end="# <<< warp-proxy (opencode) <<<"
+
+    local port="$PORT"
+    if [ -f "$CONF" ]; then
+        local conf_port
+        conf_port="$(grep -o 'BindAddress = "[^"]*"' "$CONF" | sed -E 's/.*:([0-9]+)"/\1/' | head -1)"
+        [ -n "$conf_port" ] && port="$conf_port"
+    fi
+
+    local export_line="export HTTPS_PROXY=http://127.0.0.1:$port HTTP_PROXY=http://127.0.0.1:$port NO_PROXY=localhost,127.0.0.1 https_proxy=http://127.0.0.1:$port http_proxy=http://127.0.0.1:$port no_proxy=localhost,127.0.0.1"
+
+    apply_clipboard() {
+        if ! command -v termux-clipboard-set >/dev/null 2>&1; then
+            local ans=""
+            if ! read -r -p "[!] termux-api belum terpasang. Install sekarang? [y/N]: " ans; then
+                ans="n"
+            fi
+            if [ "$ans" = "y" ] || [ "$ans" = "Y" ]; then
+                pkg install -y termux-api
+            fi
+        fi
+        if command -v termux-clipboard-set >/dev/null 2>&1; then
+            echo -e "$export_line" | termux-clipboard-set && echo -e "[✓] Disalin ke clipboard — tinggal paste."
+            return 0
+        fi
+        echo -e "[✗] termux-api tidak tersedia. Gunakan mode bashrc atau env."
+        return 1
+    }
+
+    apply_bashrc() {
+        touch "$bashrc" 2>/dev/null || true
+        if grep -q "$marker_begin" "$bashrc" 2>/dev/null; then
+            echo "[*] Export sudah ada di ~/.bashrc — perbarui ke port $port..."
+            sed -i "/$marker_begin/,/$marker_end/d" "$bashrc"
+        fi
+        {
+            echo ""
+            echo "$marker_begin"
+            echo "$export_line"
+            echo "$marker_end"
+        } >> "$bashrc"
+        echo -e "[✓] Ditulis ke ~/.bashrc — terminal baru langsung memakai proxy."
+    }
+
+    apply_env() {
+        mkdir -p "$CONFIG_DIR"
+        printf '%s\n' "$export_line" > "$CONFIG_DIR/opencode.env"
+        chmod 600 "$CONFIG_DIR/opencode.env"
+        echo -e "[✓] File dibuat: $CONFIG_DIR/opencode.env (pakai: source ~/.config/warp-proxy/opencode.env)"
+    }
+
+    remove_bashrc() {
+        if grep -q "$marker_begin" "$bashrc" 2>/dev/null; then
+            sed -i "/$marker_begin/,/$marker_end/d" "$bashrc"
+            echo -e "[✓] Export dihapus dari ~/.bashrc."
+            return 0
+        fi
+        echo -e "[!] Tidak ada export warp-proxy di ~/.bashrc."
+        return 1
+    }
+
+    case "$mode" in
+        ""|menu) ;;
+        clipboard|1) apply_clipboard; return $? ;;
+        bashrc|2) apply_bashrc; return 0 ;;
+        env|3) apply_env; return 0 ;;
+        remove|4) remove_bashrc; return $? ;;
+        all)
+            apply_bashrc
+            apply_clipboard || true
+            return 0
+            ;;
+        *) echo "Mode tidak dikenal: $mode (pilihan: clipboard, bashrc, env, remove, all)"; return 1 ;;
+    esac
+
+    while true; do
+        clear 2>/dev/null || echo ""
+        echo -e "${CYAN}==================================================="
+        echo -e "${BOLD}   Export Proxy untuk OpenCode${NC}"
+        echo -e "${CYAN}===================================================${NC}"
+        echo ""
+        echo -e " ${YELLOW}[1]${NC} Copy ke Clipboard (tinggal paste di terminal mana pun)"
+        echo -e " ${YELLOW}[2]${NC} Tulis ke ~/.bashrc (otomatis aktif di terminal baru)"
+        echo -e " ${YELLOW}[3]${NC} Buat file env (~/.config/warp-proxy/opencode.env)"
+        echo -e " ${YELLOW}[4]${NC} Hapus Export dari ~/.bashrc"
+        echo -e " ${GREEN}[A]${NC} Semua sekaligus (bashrc + clipboard)"
+        echo -e " ${YELLOW}[0]${NC} Kembali ke Menu Utama"
+        echo ""
+        echo -e "${GREEN}Perintah yang akan dipakai (port $port):${NC}"
+        echo "  $export_line"
+        echo ""
+        if ! read -r -p "Pilih [0-4/A]: " choice; then break; fi
+        case "$choice" in
+            1) apply_clipboard; sleep 2 ;;
+            2) apply_bashrc; sleep 2 ;;
+            3) apply_env; sleep 3 ;;
+            4) remove_bashrc; sleep 2 ;;
+            a|A) apply_bashrc; apply_clipboard || true; sleep 2 ;;
+            0|q|Q) break ;;
+            *) echo "Pilihan tidak valid."; sleep 1 ;;
+        esac
+    done
+}
+
+cmd_opencode_setup() {
+    local GREEN='\033[1;32m' RED='\033[1;31m' YELLOW='\033[1;33m' NC='\033[0m'
+    echo "========== Auto-Setup OpenCode + WARP Proxy =========="
+    if is_running; then
+        echo -e "[✓] Proxy WARP ${GREEN}berjalan${NC}"
+    else
+        echo -e "[*] Proxy belum jalan — start dulu..."
+        cmd_start || { echo -e "${RED}[✗] Gagal start proxy${NC}"; return 1; }
+    fi
+    echo ""
+    echo -e "${YELLOW}[1/3]${NC} Menerapkan export ke ~/.bashrc (idempotent)..."
+    cmd_export_opencode bashrc
+    cmd_export_opencode env
+    echo -e "${YELLOW}[2/3]${NC} Salin perintah export ke clipboard..."
+    cmd_export_opencode clipboard
+    echo -e "${YELLOW}[3/3]${NC} Verifikasi opencode memakai proxy..."
+    cmd_check_opencode
+    echo ""
+    echo -e "${GREEN}============================================="
+    echo "  SELESAI — tinggal:"
+    echo "  1) buka terminal baru (auto-export via ~/.bashrc)"
+    echo "  2) jalankan: opencode"
+    echo -e "=============================================${NC}"
+}
+
 cmd_uninstall() {
     local auto_yes=0
     if [ "$1" = "-y" ] || [ "$1" = "--yes" ]; then
@@ -500,6 +743,71 @@ cmd_uninstall() {
     echo "[✓] Uninstall selesai."
 }
 
+cmd_opencode_menu() {
+    local GREEN='\033[1;32m' RED='\033[1;31m' YELLOW='\033[1;33m' NC='\033[0m'
+    while true; do
+        clear 2>/dev/null || echo ""
+        echo -e "\033[1;36m===================================================\033[0m"
+        echo -e "\033[1m          OpenCode + WARP Proxy\033[0m"
+        echo -e "\033[1;36m===================================================\033[0m"
+        echo -e " ${GREEN}[1]${NC} Auto-Setup Export (1 Langkah)"
+        echo -e " ${YELLOW}[2]${NC} Cek Apakah OpenCode Pakai Proxy"
+        echo -e " ${RED}[3]${NC} Cabut Export Proxy"
+        echo -e " ${RED}[0]${NC} Kembali"
+        echo ""
+        if ! read -r -p "Pilih [0-3]: " ch; then break; fi
+        case "$ch" in
+            1) echo ""; cmd_opencode_setup; echo ""; read -r -p "Tekan Enter..." || break ;;
+            2) echo ""; cmd_check_opencode; echo ""; read -r -p "Tekan Enter..." || break ;;
+            3) echo ""; cmd_export_opencode remove; echo ""; read -r -p "Tekan Enter..." || break ;;
+            0|q|Q) break ;;
+            *) echo "Pilihan tidak valid."; sleep 1 ;;
+        esac
+    done
+}
+
+cmd_setup_menu() {
+    local YELLOW='\033[1;33m' RED='\033[1;31m' NC='\033[0m'
+    while true; do
+        clear 2>/dev/null || echo ""
+        echo -e "\033[1;36m===================================================\033[0m"
+        echo -e "\033[1m            Setup / Akun WARP\033[0m"
+        echo -e "\033[1;36m===================================================\033[0m"
+        echo -e " ${YELLOW}[1]${NC} Setup / Install WARP Proxy"
+        echo -e " ${YELLOW}[2]${NC} Registrasi Ulang Akun WARP Baru"
+        echo -e " ${RED}[0]${NC} Kembali"
+        echo ""
+        if ! read -r -p "Pilih [0-2]: " ch; then break; fi
+        case "$ch" in
+            1) echo ""; cmd_install; echo ""; read -r -p "Tekan Enter..." || break ;;
+            2) echo ""; cmd_register; echo ""; read -r -p "Tekan Enter..." || break ;;
+            0|q|Q) break ;;
+            *) echo "Pilihan tidak valid."; sleep 1 ;;
+        esac
+    done
+}
+
+cmd_maintenance_menu() {
+    local YELLOW='\033[1;33m' RED='\033[1;31m' NC='\033[0m'
+    while true; do
+        clear 2>/dev/null || echo ""
+        echo -e "\033[1;36m===================================================\033[0m"
+echo -e "\033[1m       Pengelolaan / Maintenance\033[0m"
+        echo -e "\033[1;36m===================================================\033[0m"
+        echo -e " ${YELLOW}[1]${NC} Lihat Log Service (Realtime)"
+        echo -e " ${YELLOW}[2]${NC} Watchdog Auto-Restart"
+        echo -e " ${RED}[0]${NC} Kembali"
+        echo ""
+        if ! read -r -p "Pilih [0-2]: " ch; then break; fi
+        case "$ch" in
+            1) echo ""; cmd_logs ;;
+            2) echo ""; cmd_watch 60; echo ""; read -r -p "Tekan Enter..." || break ;;
+            0|q|Q) break ;;
+            *) echo "Pilihan tidak valid."; sleep 1 ;;
+        esac
+    done
+}
+
 cmd_menu() {
     local CYAN='\033[1;36m'
     local GREEN='\033[1;32m'
@@ -524,15 +832,13 @@ cmd_menu() {
         echo -e " ${YELLOW}[2]${NC} Restart Proxy (Ganti IP Egress)"
         echo -e " ${YELLOW}[3]${NC} Jalankan Proxy (Start)"
         echo -e " ${YELLOW}[4]${NC} Hentikan Proxy (Stop)"
-        echo -e " ${YELLOW}[5]${NC} Setup / Install WARP Proxy"
-        echo -e " ${YELLOW}[6]${NC} Registrasi Ulang Akun WARP Baru"
-        echo -e " ${YELLOW}[7]${NC} Lihat Log Service (Realtime)"
-        echo -e " ${YELLOW}[8]${NC} Jalankan Watchdog Auto-Restart"
-        echo -e " ${YELLOW}[9]${NC} Tampilkan Command Export OpenCode"
-        echo -e " ${RED}[10]${NC} Uninstall WARP Proxy"
+        echo -e " ${GREEN}[5]${NC} OpenCode (Setup / Export / Cek)"
+        echo -e " ${YELLOW}[6]${NC} Setup / Registrasi Akun"
+        echo -e " ${YELLOW}[7]${NC} Log & Watchdog"
+        echo -e " ${RED}[8]${NC} Uninstall WARP Proxy"
         echo -e " ${YELLOW}[0]${NC} Keluar"
         echo ""
-        if ! read -r -p "Pilih menu [0-10]: " choice; then
+        if ! read -r -p "Pilih menu [0-8]: " choice; then
             echo ""
             echo "[!] Terminal non-interaktif terdeteksi (EOF). Keluar."
             exit 0
@@ -564,46 +870,17 @@ cmd_menu() {
                 ;;
             5)
                 echo ""
-                cmd_install
-                echo ""
-                read -r -p "Tekan Enter untuk kembali ke menu..." || break
+                cmd_opencode_menu
                 ;;
             6)
                 echo ""
-                cmd_register
-                echo ""
-                read -r -p "Tekan Enter untuk kembali ke menu..." || break
+                cmd_setup_menu
                 ;;
             7)
                 echo ""
-                cmd_logs
-                echo ""
-                read -r -p "Tekan Enter untuk kembali ke menu..." || break
+                cmd_maintenance_menu
                 ;;
             8)
-                echo ""
-                cmd_watch 60
-                echo ""
-                read -r -p "Tekan Enter untuk kembali ke menu..." || break
-                ;;
-            9)
-                echo ""
-                echo -e "${CYAN}==================================================="
-                echo -e "${BOLD}   Command Export Proxy (OpenCode & Terminal)${NC}"
-                echo -e "${CYAN}===================================================${NC}"
-                echo ""
-                echo -e "${YELLOW}📌 Copy-Paste 1 Baris (Aktifkan Proxy):${NC}"
-                echo "export HTTPS_PROXY=http://127.0.0.1:$PORT HTTP_PROXY=http://127.0.0.1:$PORT NO_PROXY=localhost,127.0.0.1 https_proxy=http://127.0.0.1:$PORT http_proxy=http://127.0.0.1:$PORT no_proxy=localhost,127.0.0.1"
-                echo ""
-                echo -e "${YELLOW}📌 Jalankan OpenCode:${NC}"
-                echo "opencode"
-                echo ""
-                echo -e "${YELLOW}📌 Matikan / Lepas Proxy (Unset):${NC}"
-                echo "unset HTTPS_PROXY HTTP_PROXY NO_PROXY https_proxy http_proxy no_proxy"
-                echo ""
-                read -r -p "Tekan Enter untuk kembali ke menu..." || break
-                ;;
-            10)
                 echo ""
                 cmd_uninstall
                 echo ""
@@ -639,6 +916,9 @@ Subcommands:
   status                 Cek status service dan IP publik (IPv4/IPv6)
   logs                   Lihat log realtime service (tail -f)
   watch [interval]       Jalankan watchdog auto-restart (fallback jika tanpa runit)
+  check-opencode         Cek apakah OpenCode memakai proxy (env var + test strace)
+  export                 Export proxy untuk OpenCode: clipboard|bashrc|env|remove|all
+  opencode               Auto-setup 1 langkah (pastikan proxy + export + verifikasi)
   help | -h | --help     Tampilkan pesan bantuan ini
 
 Cara Penggunaan & Eksplorasi:
@@ -677,6 +957,9 @@ case "$1" in
     logs)                cmd_logs ;;
     watch)               cmd_watch "$2" ;;
     loop)                cmd_loop "$2" ;;
+    check-opencode)      cmd_check_opencode ;;
+    export)              cmd_export_opencode "$2" ;;
+    opencode)            cmd_opencode_setup ;;
     help|-h|--help)      cmd_help ;;
     *)                   cmd_help; exit 1 ;;
 esac
