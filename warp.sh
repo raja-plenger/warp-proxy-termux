@@ -28,7 +28,12 @@ migrate_old_configs() {
         fi
     done
     if [ -f "$CONFIG_DIR/wireproxy.conf" ]; then
-        sed -i "s|[^[:space:]]*/wgcf-profile.conf|$CONFIG_DIR/wgcf-profile.conf|g" "$CONFIG_DIR/wireproxy.conf" 2>/dev/null || true
+        cat > "$CONFIG_DIR/wireproxy.conf" <<EOF
+WGConfig = "$CONFIG_DIR/wgcf-profile.conf"
+
+[http]
+BindAddress = "127.0.0.1:$PORT"
+EOF
     fi
     chmod 600 "$CONFIG_DIR/wgcf-profile.conf" "$CONFIG_DIR/warp-account.json" 2>/dev/null || true
 }
