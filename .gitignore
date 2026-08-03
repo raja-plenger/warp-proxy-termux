@@ -1,0 +1,23 @@
+# Privat — jangan pernah commit (berisi private key akun WARP)
+wgcf-account.toml
+wgcf-profile.conf
+warp-account.json
+
+# Binary
+wgcf
+
+# Runtime / log
+warp.log
+warp.pid
+warp-watchdog.pid
+warp-watchdog.log
+
+# Workaround lokal (angka-angka per-perangkat)
+ca-bundle.crt
+
+# Hasil generate warp.sh (path absolut per-perangkat)
+wireproxy.conf
+resolv.conf
+
+# OS
+.DS_Store
